@@ -104,6 +104,24 @@ class TimeSeriesSparkHandlerImpl(NexusCalcSparkHandler):
                 reason="'ds' argument is required. Must be comma-delimited string",
                 code=400)
 
+        try:
+            wt = request.get_weights()
+        except:
+            raise NexusProcessingException(
+                reason="Invalid 'wt' argument provided",
+                code=400)
+        else:
+            if wt is None:
+                wt = ["coslat"]
+            if len(wt) != len(ds):
+                if len(wt) == 1:
+                    # Apply single provided weight to each dataset
+                    wt = wt * len(ds)
+                else:
+                    raise NexusProcessingException(
+                        reason="Incompatible 'ds' and 'wt' arguments provided",
+                        code=400)
+                    
         # Do not allow time series on Climatology
         if next(iter([clim for clim in ds if 'CLIM' in clim]), False):
             raise NexusProcessingException(reason="Cannot compute time series on a climatology", code=400)
@@ -156,7 +174,7 @@ class TimeSeriesSparkHandlerImpl(NexusCalcSparkHandler):
 
         nparts_requested = request.get_nparts()
 
-        return ds, bounding_polygon, start_seconds_from_epoch, end_seconds_from_epoch, apply_seasonal_cycle_filter, apply_low_pass_filter, nparts_requested
+        return ds, wt, bounding_polygon, start_seconds_from_epoch, end_seconds_from_epoch, apply_seasonal_cycle_filter, apply_low_pass_filter, nparts_requested
 
     def calc(self, request, **args):
         """
@@ -166,14 +184,12 @@ class TimeSeriesSparkHandlerImpl(NexusCalcSparkHandler):
         :return:
         """
         start_time = datetime.now()
-        ds, bounding_polygon, start_seconds_from_epoch, end_seconds_from_epoch, apply_seasonal_cycle_filter, apply_low_pass_filter, nparts_requested = self.parse_arguments(
-            request)
         metrics_record = self._create_metrics_record()
+        ds, wt, bounding_polygon, start_seconds_from_epoch, end_seconds_from_epoch, apply_seasonal_cycle_filter, apply_low_pass_filter, nparts_requested = self.parse_arguments(request)
 
         resultsRaw = []
 
-        for shortName in ds:
-
+        for shortName, weight in zip(ds, wt):
             the_time = datetime.now()
             daysinrange = self._get_tile_service().find_days_in_range_asc(bounding_polygon.bounds[1],
                                                                     bounding_polygon.bounds[3],
@@ -195,7 +211,7 @@ class TimeSeriesSparkHandlerImpl(NexusCalcSparkHandler):
             spark_nparts = self._spark_nparts(nparts_requested)
             self.log.info('Using {} partitions'.format(spark_nparts))
             results, meta = spark_driver(daysinrange, bounding_polygon,
-                                         shortName,
+                                         shortName, weight,
                                          self._tile_service_factory,
                                          metrics_record.record_metrics,
                                          spark_nparts=spark_nparts,
@@ -490,9 +506,15 @@ class TimeSeriesResults(NexusResults):
         return sio.getvalue()
 
 
+<<<<<<< Updated upstream
 def spark_driver(daysinrange, bounding_polygon, ds, tile_service_factory, metrics_callback, fill=-9999.,
                  spark_nparts=1, sc=None):
     nexus_tiles_spark = [(bounding_polygon.wkt, ds,
+=======
+def spark_driver(daysinrange, bounding_polygon, ds, wt, metrics_callback,
+                 fill=-9999., spark_nparts=1, sc=None):
+    nexus_tiles_spark = [(bounding_polygon.wkt, ds, wt,
+>>>>>>> Stashed changes
                           list(daysinrange_part), fill)
                          for daysinrange_part
                          in np.array_split(daysinrange, spark_nparts)]
@@ -513,12 +535,17 @@ def calc_average_on_day(tile_service_factory, metrics_callback, tile_in_spark):
     from pytz import timezone
     ISO_8601 = '%Y-%m-%dT%H:%M:%S%z'
 
-    (bounding_wkt, dataset, timestamps, fill) = tile_in_spark
+    (bounding_wkt, dataset, weight, timestamps, fill) = tile_in_spark
     if len(timestamps) == 0:
         return []
+<<<<<<< Updated upstream
     tile_service = tile_service_factory()
+=======
+    tile_service = NexusTileService()
+    poly = shapely.wkt.loads(bounding_wkt)
+>>>>>>> Stashed changes
     ds1_nexus_tiles = \
-        tile_service.get_tiles_bounded_by_polygon(shapely.wkt.loads(bounding_wkt),
+        tile_service.get_tiles_bounded_by_polygon(poly,
                                                   dataset,
                                                   timestamps[0],
                                                   timestamps[-1],
@@ -535,6 +562,31 @@ def calc_average_on_day(tile_service_factory, metrics_callback, tile_in_spark):
         tile = ds1_nexus_tiles[i]
         tile_dict[tile.times[0]].append(i)
 
+    if weight != "none" and weight != "coslat":
+        min_lon, min_lat, max_lon, max_lat = poly.bounds
+        weight_timestamps = tile_service.find_days_in_range_asc(min_lat,
+                                                                max_lat,
+                                                                min_lon,
+                                                                max_lon,
+                                                                weight,
+                                                                0, 2e9)
+        weight_tile_cnt = 0
+        i = 0
+        while weight_tile_cnt == 0 and i < len(weight_timestamps):
+            weight_tiles = \
+                tile_service.get_tiles_bounded_by_polygon(poly,
+                                                          weight,
+                                                          weight_timestamps[i],
+                                                          weight_timestamps[i],
+                                                          rows=5000)
+            weight_tile_cnt = len(weight_tiles)
+            print("Got {} weight tiles".format(weight_tile_cnt))
+            i += 1
+        if weight_tile_cnt == 0:
+            weight = "none"
+            print("Couldn't load weight tiles, so using flat weights")
+        else:
+            print("Used weight time {}".format(weight_timestamps[i-1]))
     stats_arr = []
     for timeinseconds in timestamps:
         cur_tile_list = tile_dict[timeinseconds]
@@ -549,19 +601,37 @@ def calc_average_on_day(tile_service_factory, metrics_callback, tile_in_spark):
                                         for i in cur_tile_list
                                         if (ds1_nexus_tiles[i].times[0] ==
                                             timeinseconds)]))
-        lats_agg = np.hstack([np.repeat(ds1_nexus_tiles[i].latitudes,
-                                        len(ds1_nexus_tiles[i].longitudes))
-                              for i in cur_tile_list
-                              if (ds1_nexus_tiles[i].times[0] ==
-                                  timeinseconds)])
+        if weight == "none":
+            # Set weights to unity
+            weight_vals = np.ones(tile_data_agg.shape)
+        elif weight == "coslat":
+            # Set weights to latitudes
+            weight_vals = \
+                np.hstack([np.repeat(ds1_nexus_tiles[i].latitudes,
+                                     len(ds1_nexus_tiles[i].longitudes))
+                           for i in cur_tile_list
+                           if (ds1_nexus_tiles[i].times[0] ==
+                               timeinseconds)])
+        else:
+            # Set weights from a variable ingested into NEXUS and
+            # tiled identically to the measuerment variable.
+            weight_vals = \
+                np.ma.array(data=np.hstack([weight_tile.data.data.flatten()
+                                            for weight_tile in weight_tiles]),
+                            mask=np.hstack([weight_tile.data.mask.flatten()
+                                            for weight_tile in weight_tiles]))
+
         if (len(tile_data_agg) == 0) or tile_data_agg.mask.all():
             continue
         else:
+            if weight == "coslat":
+                weight_vals = np.cos(np.radians(weight_vals))
             data_min = np.ma.min(tile_data_agg)
             data_max = np.ma.max(tile_data_agg)
             daily_mean = \
-                np.ma.average(tile_data_agg,
-                              weights=np.cos(np.radians(lats_agg))).item()
+                np.ma.average(tile_data_agg, weights=weight_vals).item()
+            #daily_mean = \
+            #    np.ma.average(tile_data_agg).item()
             data_count = np.ma.count(tile_data_agg)
             data_std = np.ma.std(tile_data_agg)
 

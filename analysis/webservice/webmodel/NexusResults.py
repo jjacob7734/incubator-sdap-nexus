@@ -19,6 +19,7 @@ class NexusResults:
             self.__minLon = computeOptions.get_min_lon()
             self.__maxLon = computeOptions.get_max_lon()
             self.__ds = computeOptions.get_dataset()
+            self.__wt = computeOptions.get_weights()
             self.__startTime = computeOptions.get_start_time()
             self.__endTime = computeOptions.get_end_time()
         else:
@@ -27,6 +28,7 @@ class NexusResults:
             self.__minLon = args["minLon"] if "minLon" in args else -180.0
             self.__maxLon = args["maxLon"] if "maxLon" in args else 180.0
             self.__ds = args["ds"] if "ds" in args else None
+            self.__wt = args["wt"] if "wt" in args else None
             self.__startTime = args["startTime"] if "startTime" in args else None
             self.__endTime = args["endTime"] if "endTime" in args else None
 

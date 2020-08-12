@@ -5,6 +5,7 @@ class RequestParameters(object):
     MAX_LON = "maxLon"
     MIN_LON = "minLon"
     DATASET = "ds"
+    WEIGHTS = "wt"
     ENVIRONMENT = "env"
     OUTPUT = "output"
     START_TIME = "startTime"

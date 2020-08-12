@@ -12,7 +12,8 @@ from webservice.webmodel.StatsComputeOptions import StatsComputeOptions
 class NexusRequestObject(StatsComputeOptions):
     shortNamePattern = re.compile("^[a-zA-Z0-9_\-,\.]+$")
     floatingPointPattern = re.compile('[+-]?(\d+(\.\d*)?|\.\d+)([eE][+-]?\d+)?')
-
+    validWeights = vars(ValidWeights()).values()
+    
     def __init__(self, reqHandler):
         self.__log = logging.getLogger(__name__)
         if reqHandler is None:
@@ -126,6 +127,18 @@ class NexusRequestObject(StatsComputeOptions):
             raise Exception("Invalid shortname")
         else:
             return ds.split(",")
+
+    def get_weights(self):
+        wt_in = self.get_argument(RequestParameters.WEIGHTS, None)
+        if wt_in is None:
+            return None
+        else:
+            wts = wt_in.split(",")
+            for wt in wts:
+                if (not wt in self.validWeights and
+                    not self.__validate_is_shortname(wt)):
+                    raise Exception("Invalid weight: {}".format(wt))
+            return wts
 
     def get_metadata_filter(self):
         return self.requestHandler.get_arguments(RequestParameters.METADATA_FILTER)

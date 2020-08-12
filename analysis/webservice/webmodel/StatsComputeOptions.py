@@ -20,6 +20,9 @@ class StatsComputeOptions(object):
     def get_dataset(self):
         raise Exception("Please implement")
 
+    def get_weights(self):
+        raise Exception("Please implement")
+
     def get_environment(self):
         raise Exception("Please implement")
 
