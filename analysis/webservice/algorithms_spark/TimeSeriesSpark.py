@@ -506,15 +506,10 @@ class TimeSeriesResults(NexusResults):
         return sio.getvalue()
 
 
-<<<<<<< Updated upstream
-def spark_driver(daysinrange, bounding_polygon, ds, tile_service_factory, metrics_callback, fill=-9999.,
-                 spark_nparts=1, sc=None):
-    nexus_tiles_spark = [(bounding_polygon.wkt, ds,
-=======
-def spark_driver(daysinrange, bounding_polygon, ds, wt, metrics_callback,
-                 fill=-9999., spark_nparts=1, sc=None):
+def spark_driver(daysinrange, bounding_polygon, ds, wt, fill=-9999,
+                 tile_service_factory, metrics_callback, spark_nparts=1,
+                 sc=None):
     nexus_tiles_spark = [(bounding_polygon.wkt, ds, wt,
->>>>>>> Stashed changes
                           list(daysinrange_part), fill)
                          for daysinrange_part
                          in np.array_split(daysinrange, spark_nparts)]
@@ -538,12 +533,8 @@ def calc_average_on_day(tile_service_factory, metrics_callback, tile_in_spark):
     (bounding_wkt, dataset, weight, timestamps, fill) = tile_in_spark
     if len(timestamps) == 0:
         return []
-<<<<<<< Updated upstream
     tile_service = tile_service_factory()
-=======
-    tile_service = NexusTileService()
     poly = shapely.wkt.loads(bounding_wkt)
->>>>>>> Stashed changes
     ds1_nexus_tiles = \
         tile_service.get_tiles_bounded_by_polygon(poly,
                                                   dataset,
